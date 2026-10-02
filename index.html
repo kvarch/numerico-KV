@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KV Relatório de Áreas · Extrator · Beta V01</title>
+<title>KV Relatório de Áreas · Extrator · Beta V02</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Hind:wght@300;400;500;600;700&display=swap');
 :root{font-family:'Hedley New','Hind',system-ui,-apple-system,sans-serif}
@@ -239,35 +239,37 @@ details>div{padding:0 16px 16px}
   </section>
 </main>
 
-<footer class="app-footer"><span>Beta V01 · © 2026 Königsberger Vannucchi</span><span>KV Relatório de Áreas · Extrator</span></footer>
+<footer class="app-footer"><span>Beta V02 · © 2026 Königsberger Vannucchi</span><span>KV Relatório de Áreas · Extrator</span></footer>
 
 <script type="module">
-const APP = { nome: 'KV Relatório de Áreas — Extrator', versao: 'Beta V01' };
+const APP = { nome: 'KV Relatório de Áreas — Extrator', versao: 'Beta V02' };
 const SDK_URL = 'https://esm.sh/@gi-nx/iframe-sdk';
 const AREA_HINT = /area|gfa|gba|nla|nsa|floor|level|storey|pav|unit|unid|park|vaga|height|effic|priv|comp/i;
-const FEAT_KEYS = ['rawSections', 'bakedSections'];
+const FEAT_KEYS = ['analytics', 'rawSections', 'bakedSections'];
 const USAGE_KEYS = ['usage', '_usage', 'usageName', 'usage_name', 'usageId'];
 
 const DEF_DICT = {
   familia: {
     res: 'RES, RESID, RESIDENCIAL, HIS, HMP',
-    corp: 'CORP, CORPORATIVO, OFF, OFFICE, ESC, ESCRITORIO',
-    mall: 'MALL, VAR, VAREJO, LOJA, LOJAS, COMERCIO, COMERCIAL',
+    corp: 'CORP, CORPORATIVO, CORPORATIVA, OFF, OFFICE, ESC, ESCRITORIO',
+    mall: 'MALL, VAR, VAREJO, LOJA, LOJAS, COMERCIO, COMERCIAL, COM',
     extra: 'HOT, HOTEL, INST, EDU, SAUDE, SERV',
     estac: 'EST, ESTAC, ESTACIONAMENTO, GAR, GARAGEM, VAGA, VAGAS'
   },
-  natureza: { priv: 'PRIV, PRIVATIVA, PRIVATIVO, PVT', comum: 'COMUM, COMUNS, CMM' },
-  computo: { ncomp: 'NCOMP, NC, NAOCOMP, NAOCOMPUTAVEL, NCOMPUTAVEL, NCPT', comp: 'COMP, COMPUTAVEL, CPT' }
+  natureza: { priv: 'PRIV, PRIVATIVA, PRIVATIVO, PVT', comum: 'COMUM, COMUNS, CMM, LAZER, CIRCULACAO' },
+  computo: { ncomp: 'NCOMP, NC, NAOCOMP, NAOCOMPUTAVEL, NCOMPUTAVEL, NCPT', tec: 'AREATECNICA, ATEC, TECNICA', comp: 'COMP, COMPUTAVEL, CPT' },
+  implantacao: { site: 'RUA, GLEBA, LOTE, LOTES, PISOS, CAMINHO, REGIAO, AREAVERDE, AREAPERMEAVEL, PERMEAVEL' }
 };
 const ROT = {
   familia: { res: 'Residencial', corp: 'Corporativo', mall: 'Mall / Varejo', extra: 'Outros usos', estac: 'Estacionamento' },
   natureza: { priv: 'Privativa', comum: 'Comum' },
-  computo: { ncomp: 'Não computável', comp: 'Computável' }
+  computo: { ncomp: 'Não computável', tec: 'Área técnica', comp: 'Computável' },
+  implantacao: { site: 'Implantação / terreno' }
 };
 
 const S = {
   sdk: null, inFrame: window.parent !== window,
-  fontes: {}, usosRaw: [], usos: [], feats: { rawSections: [], bakedSections: [] }, featSrc: 'rawSections',
+  fontes: {}, usosRaw: [], usos: [], feats: { analytics: [], rawSections: [], bakedSections: [] }, featSrc: 'analytics',
   usageKey: null, inventario: {}, porUso: {}, analytics: null, anaLeaves: [], bundleInfo: null,
   dict: loadDict(), prefix: lsGet('kvra_prefix') ?? '0', live: false, unsub: null, extracting: false
 };
@@ -277,7 +279,7 @@ const $ = id => document.getElementById(id);
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
-function loadDict() { try { const j = JSON.parse(lsGet('kvra_dict') || 'null'); if (j && j.familia && j.natureza && j.computo) return j; } catch {} return structuredClone(DEF_DICT); }
+function loadDict() { try { const j = JSON.parse(lsGet('kvra_dict_v2') || 'null'); if (j && j.familia && j.natureza && j.computo && j.implantacao) return j; } catch {} return structuredClone(DEF_DICT); }
 const fmt = n => typeof n === 'number' && isFinite(n) ? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
 const fmtInt = n => typeof n === 'number' ? n.toLocaleString('pt-BR') : '—';
 function log(msg) { const el = $('log'); const t = new Date().toLocaleTimeString('pt-BR'); el.textContent += `[${t}] ${msg}\n`; el.scrollTop = el.scrollHeight; console.log('[KVRA]', msg); }
@@ -352,13 +354,19 @@ function parseNome(nome, sets = dictSets()) {
     }
     return null;
   };
-  r.computo = match('computo', ['ncomp', 'comp']);
+  r.implantacao = match('implantacao', ['site']) ? true : false;
+  r.computo = match('computo', ['ncomp', 'tec', 'comp']);
   r.natureza = match('natureza', ['priv', 'comum']);
-  r.familia = match('familia', Object.keys(S.dict.familia));
+  r.familia = match('familia', Object.keys(S.dict.familia).filter(k => k !== 'estac'));
+  r.estacionamento = !!match('familia', ['estac']);
+  if (!r.familia && r.estacionamento) r.familia = 'estac';
   toks.forEach((t, i) => { if (!used.has(i)) (/^\d+$/.test(t) ? r.codigo : (r.esp ??= [])).push(t); });
   r.especifico = (r.esp || []).join(' '); delete r.esp;
-  const completo = r.familia === 'estac' ? true : (r.familia && r.natureza && r.computo);
-  r.situacao = completo ? 'ok' : (r.familia || r.natureza || r.computo ? 'incompleto' : 'nao_classificado');
+  if (r.implantacao && !r.familia) r.situacao = 'implantacao';
+  else if (r.estacionamento) r.situacao = 'ok';
+  else if (r.familia && r.natureza && r.computo) r.situacao = 'ok';
+  else if (r.familia && !r.natureza && !r.computo) r.situacao = 'tipologia';
+  else r.situacao = (r.familia || r.natureza || r.computo) ? 'incompleto' : 'nao_classificado';
   return r;
 }
 
@@ -398,20 +406,20 @@ function renderUsos(lista) {
   const filtro = norm($('inFiltroUso').value.trim());
   const areaKey = $('selArea').value;
   S.usos = lista.map(u => ({ ...u, parse: parseNome(u.nome, sets) }));
-  const c = { ok: 0, incompleto: 0, nao_classificado: 0, fora: 0 };
+  const c = { ok: 0, tipologia: 0, implantacao: 0, incompleto: 0, nao_classificado: 0, fora: 0 };
   S.usos.forEach(u => c[u.parse.situacao]++);
   $('usoSummary').innerHTML = [
-    ['Usos lidos', S.usos.length], ['Classificados', c.ok], ['Incompletos', c.incompleto], ['Não classificados', c.nao_classificado], ['Fora do padrão', c.fora]
+    ['Usos lidos', S.usos.length], ['Classificados', c.ok], ['Tipologias', c.tipologia], ['Implantação', c.implantacao], ['Incompletos', c.incompleto], ['Não classificados', c.nao_classificado], ['Fora do padrão', c.fora]
   ].map(([k, v]) => `<div><b>${v}</b><span>${k}</span></div>`).join('');
-  const ordem = { ok: 0, incompleto: 1, nao_classificado: 2, fora: 3 };
+  const ordem = { ok: 0, tipologia: 1, implantacao: 2, incompleto: 3, nao_classificado: 4, fora: 5 };
   const rows = S.usos.filter(u => !filtro || norm(u.nome).includes(filtro))
     .sort((a, b) => ordem[a.parse.situacao] - ordem[b.parse.situacao] || a.nome.localeCompare(b.nome, 'pt-BR'))
     .map(u => {
       const p = u.parse, st = usoStats(u);
-      const tag = { ok: '<span class="tag ok">OK</span>', incompleto: '<span class="tag inc">Incompleto</span>', nao_classificado: '<span class="tag nc">Não classif.</span>', fora: '<span class="tag">Fora</span>' }[p.situacao];
+      const tag = { ok: '<span class="tag ok">OK</span>', tipologia: '<span class="tag">Tipologia</span>', implantacao: '<span class="tag">Implantação</span>', incompleto: '<span class="tag inc">Incompleto</span>', nao_classificado: '<span class="tag nc">Não classif.</span>', fora: '<span class="tag">Fora</span>' }[p.situacao];
       const esp = [p.codigo.length ? `<code>${esc(p.codigo.join(' '))}</code>` : '', esc(p.especifico)].filter(Boolean).join(' ');
       return `<tr class="st-${p.situacao === 'fora' ? 'fora' : 'in'}"><td><code>${esc(u.nome)}</code></td><td>${tag}</td>
-        <td>${esc(ROT.familia[p.familia] ?? '—')}</td><td>${esc(ROT.natureza[p.natureza] ?? '—')}</td><td>${esc(ROT.computo[p.computo] ?? '—')}</td>
+        <td>${esc(ROT.familia[p.familia] ?? '—')}${p.estacionamento && p.familia !== 'estac' ? ' · <span class="tag">Estac.</span>' : ''}</td><td>${esc(ROT.natureza[p.natureza] ?? '—')}</td><td>${esc(ROT.computo[p.computo] ?? '—')}</td>
         <td>${esp || '—'}</td><td class="num">${st ? fmtInt(st.n) : '—'}</td><td class="num">${st && areaKey ? fmt(st.soma[areaKey]) : '—'}</td></tr>`;
     });
   $('tbUsos').innerHTML = rows.join('') || '<tr><td colspan="8" class="muted">Nenhum uso.</td></tr>';
@@ -469,11 +477,12 @@ async function tentar(nome, fn) {
 }
 function lerEstadoFeicoes() {
   for (const k of FEAT_KEYS) {
+    if (k === 'analytics') continue;
     let v; try { v = S.sdk.giraffeState.get(k); } catch (e) { v = undefined; }
     S.feats[k] = normFeatures(v);
     S.fontes[`giraffeState.${k}`] = { ok: v !== undefined, info: v === undefined ? 'indisponível' : `${shapeOf(v)} → ${S.feats[k].length} feições` };
   }
-  if (!S.feats[S.featSrc]?.length) S.featSrc = FEAT_KEYS.find(k => S.feats[k]?.length) || 'rawSections';
+  if (!S.feats[S.featSrc]?.length) S.featSrc = FEAT_KEYS.find(k => S.feats[k]?.length) || 'analytics';
 }
 async function extrair() {
   if (!S.sdk || S.extracting) return;
@@ -484,6 +493,9 @@ async function extrair() {
     lerEstadoFeicoes();
     const ana = await tentar('getAnalyticsResult', () => rpc('getAnalyticsResult'));
     S.analytics = ana ?? null; S.anaLeaves = []; if (ana !== undefined) walk(ana, '', S.anaLeaves);
+    S.feats.analytics = normFeatures(ana?.stackedSectionResult?.asArray ?? ana?.stackedSectionResult?.asObject);
+    S.fontes['analytics.stackedSectionResult'] = { ok: S.feats.analytics.length > 0, info: `${S.feats.analytics.length} feições avaliadas (empilhadas)` };
+    if (!S.feats[S.featSrc]?.length) S.featSrc = FEAT_KEYS.find(k => S.feats[k]?.length) || 'analytics';
     try { const keys = S.sdk.giraffeState && (S.sdk.giraffeState.state ? Object.keys(S.sdk.giraffeState.state) : null); S.fontes['giraffeState (chaves)'] = { ok: !!keys, info: keys ? keys.join(', ') : 'não enumerável' }; } catch {}
     if ($('chkBundle').checked) {
       const b = await tentar('getProjectBundle', () => rpc('getProjectBundle'));
@@ -501,7 +513,11 @@ async function extrair() {
 }
 const onModelChange = debounce(() => {
   if (!S.live) return;
-  lerEstadoFeicoes(); renderAll(); log('Modelo alterado → feições recalculadas');
+  lerEstadoFeicoes();
+  rpc('getAnalyticsResult').then(ana => {
+    S.analytics = ana ?? null; S.anaLeaves = []; if (ana !== undefined) walk(ana, '', S.anaLeaves);
+    S.feats.analytics = normFeatures(ana?.stackedSectionResult?.asArray ?? ana?.stackedSectionResult?.asObject);
+  }).catch(e => log('getAnalyticsResult (sync): ' + e.message)).finally(() => { renderAll(); log('Modelo alterado → dados recalculados'); });
 }, 700);
 function toggleLive(on) {
   S.live = on;
@@ -531,6 +547,22 @@ function amostraFeicoes() {
   }
   return out;
 }
+function semGeo(v, depth = 0) {
+  if (v === null || typeof v !== 'object' || depth > 40) return v;
+  if (Array.isArray(v)) return v.map(x => semGeo(x, depth + 1));
+  if (v.type === 'Feature') return { type: 'Feature', id: v.id ?? null, geometria: v.geometry?.type ?? null, properties: v.properties };
+  const o = {}; for (const [k, x] of Object.entries(v)) o[k] = k === 'coordinates' ? '[omitido]' : semGeo(x, depth + 1); return o;
+}
+function analyticsExport() {
+  const a = S.analytics; if (!a || typeof a !== 'object') return a ?? null;
+  const out = {};
+  for (const [k, v] of Object.entries(a)) {
+    if (k === 'rows' && Array.isArray(v)) out.rows = v.map(r => ({ measure: r?.measure, n_features: r?.features?.length ?? 0, feature_ids: (r?.features || []).map(f => f?.id ?? f?.properties?.id).slice(0, 200), ...Object.fromEntries(Object.entries(r || {}).filter(([kk]) => kk !== 'measure' && kk !== 'features')) }));
+    else if (k === 'stackedSectionResult') out.stackedSectionResult = { asArray: semGeo(v?.asArray ?? Object.values(v?.asObject || {})) };
+    else out[k] = semGeo(v);
+  }
+  return out;
+}
 function buildExport() {
   const inv = {};
   for (const [k, e] of Object.entries(S.inventario)) inv[k] = { tipos: [...e.tipos], n: e.n, soma: e.tipos.has('number') ? +e.soma.toFixed(4) : null };
@@ -541,7 +573,7 @@ function buildExport() {
     usos: S.usos.map(u => ({ nome: u.nome, id: u.id, leitura: u.parse, feicoes: usoStats(u)?.n ?? 0, definicao: trunc(u.raw) })),
     feicoes: { fonte: S.featSrc, total: S.feats[S.featSrc]?.length ?? 0, chave_uso: S.usageKey, soma_por_uso: S.porUso, amostra: amostraFeicoes() },
     inventario_propriedades: inv,
-    analytics: trunc(S.analytics),
+    analytics: analyticsExport(),
     bundle: S.bundleInfo
   };
 }
@@ -575,8 +607,8 @@ function bindUI() {
   $('inFiltroProp').addEventListener('input', renderProps);
   $('selFonteFeat').addEventListener('change', e => { S.featSrc = e.target.value; renderAll(); });
   $('inFiltroAna').addEventListener('input', renderAna);
-  $('dictGrid').addEventListener('input', debounce(e => { const t = e.target; if (!t.dataset.g) return; S.dict[t.dataset.g][t.dataset.k] = t.value; lsSet('kvra_dict', JSON.stringify(S.dict)); renderUsos(S.usosRaw); }, 250));
-  $('btnDictReset').addEventListener('click', () => { S.dict = structuredClone(DEF_DICT); lsSet('kvra_dict', JSON.stringify(S.dict)); renderDict(); renderUsos(S.usosRaw); });
+  $('dictGrid').addEventListener('input', debounce(e => { const t = e.target; if (!t.dataset.g) return; S.dict[t.dataset.g][t.dataset.k] = t.value; lsSet('kvra_dict_v2', JSON.stringify(S.dict)); renderUsos(S.usosRaw); }, 250));
+  $('btnDictReset').addEventListener('click', () => { S.dict = structuredClone(DEF_DICT); lsSet('kvra_dict_v2', JSON.stringify(S.dict)); renderDict(); renderUsos(S.usosRaw); });
   $('btnManual').addEventListener('click', () => {
     const nomes = $('taNomes').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     S.usosRaw = [...S.usosRaw.filter(u => !u.manual), ...nomes.map(n => ({ nome: n, id: null, raw: null, manual: true }))];
