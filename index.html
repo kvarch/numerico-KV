@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KV Relatório de Áreas · Extrator · Beta V02</title>
+<title>KV Relatório de Áreas · Extrator · Beta V03</title>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Hind:wght@300;400;500;600;700&display=swap');
 :root{font-family:'Hedley New','Hind',system-ui,-apple-system,sans-serif}
@@ -184,8 +184,8 @@ details>div{padding:0 16px 16px}
       </details>
     </div>
     <div class="table-wrap"><table aria-describedby="usoSummary"><thead><tr>
-      <th scope="col">Uso</th><th scope="col">Situação</th><th scope="col">Família</th><th scope="col">Natureza</th><th scope="col">Cômputo</th><th scope="col">Específico / tipologia</th><th scope="col">Feições</th><th scope="col">Soma</th>
-    </tr></thead><tbody id="tbUsos"><tr><td colspan="8" class="muted">Nenhum uso lido.</td></tr></tbody></table></div>
+      <th scope="col">Uso</th><th scope="col">Situação</th><th scope="col">Família</th><th scope="col">Natureza</th><th scope="col">Cômputo</th><th scope="col">Fase</th><th scope="col">Específico / tipologia</th><th scope="col">Feições</th><th scope="col">Soma</th>
+    </tr></thead><tbody id="tbUsos"><tr><td colspan="9" class="muted">Nenhum uso lido.</td></tr></tbody></table></div>
     <div class="card">
       <h2>Teste manual do leitor</h2>
       <label class="flabel" for="taNomes">Cole nomes de usos, um por linha</label>
@@ -239,10 +239,10 @@ details>div{padding:0 16px 16px}
   </section>
 </main>
 
-<footer class="app-footer"><span>Beta V02 · © 2026 Königsberger Vannucchi</span><span>KV Relatório de Áreas · Extrator</span></footer>
+<footer class="app-footer"><span>Beta V03 · © 2026 Königsberger Vannucchi</span><span>KV Relatório de Áreas · Extrator</span></footer>
 
 <script type="module">
-const APP = { nome: 'KV Relatório de Áreas — Extrator', versao: 'Beta V02' };
+const APP = { nome: 'KV Relatório de Áreas — Extrator', versao: 'Beta V03' };
 const SDK_URL = 'https://esm.sh/@gi-nx/iframe-sdk';
 const AREA_HINT = /area|gfa|gba|nla|nsa|floor|level|storey|pav|unit|unid|park|vaga|height|effic|priv|comp/i;
 const FEAT_KEYS = ['analytics', 'rawSections', 'bakedSections'];
@@ -258,19 +258,21 @@ const DEF_DICT = {
   },
   natureza: { priv: 'PRIV, PRIVATIVA, PRIVATIVO, PVT', comum: 'COMUM, COMUNS, CMM, LAZER, CIRCULACAO' },
   computo: { ncomp: 'NCOMP, NC, NAOCOMP, NAOCOMPUTAVEL, NCOMPUTAVEL, NCPT', tec: 'AREATECNICA, ATEC, TECNICA', comp: 'COMP, COMPUTAVEL, CPT' },
+  situacao: { existente: 'EX, EXIST, EXISTENTE', expansao: 'EXP, EXPANSAO', novo: 'NOVO, NOV, NV' },
   implantacao: { site: 'RUA, GLEBA, LOTE, LOTES, PISOS, CAMINHO, REGIAO, AREAVERDE, AREAPERMEAVEL, PERMEAVEL' }
 };
 const ROT = {
   familia: { res: 'Residencial', corp: 'Corporativo', mall: 'Mall / Varejo', extra: 'Outros usos', estac: 'Estacionamento' },
   natureza: { priv: 'Privativa', comum: 'Comum' },
   computo: { ncomp: 'Não computável', tec: 'Área técnica', comp: 'Computável' },
+  situacao: { existente: 'Existente', expansao: 'Expansão', novo: 'Novo' },
   implantacao: { site: 'Implantação / terreno' }
 };
 
 const S = {
   sdk: null, inFrame: window.parent !== window,
   fontes: {}, usosRaw: [], usos: [], feats: { analytics: [], rawSections: [], bakedSections: [] }, featSrc: 'analytics',
-  usageKey: null, inventario: {}, porUso: {}, analytics: null, anaLeaves: [], bundleInfo: null,
+  usageKey: null, inventario: {}, porUso: {}, analytics: null, anaLeaves: [], bundleInfo: null, blocos: null, blocoRefs: null,
   dict: loadDict(), prefix: lsGet('kvra_prefix') ?? '0', live: false, unsub: null, extracting: false
 };
 
@@ -279,7 +281,7 @@ const $ = id => document.getElementById(id);
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
-function loadDict() { try { const j = JSON.parse(lsGet('kvra_dict_v2') || 'null'); if (j && j.familia && j.natureza && j.computo && j.implantacao) return j; } catch {} return structuredClone(DEF_DICT); }
+function loadDict() { try { const j = JSON.parse(lsGet('kvra_dict_v3') || 'null'); if (j && j.familia && j.natureza && j.computo && j.implantacao && j.situacao) return j; } catch {} return structuredClone(DEF_DICT); }
 const fmt = n => typeof n === 'number' && isFinite(n) ? n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
 const fmtInt = n => typeof n === 'number' ? n.toLocaleString('pt-BR') : '—';
 function log(msg) { const el = $('log'); const t = new Date().toLocaleTimeString('pt-BR'); el.textContent += `[${t}] ${msg}\n`; el.scrollTop = el.scrollHeight; console.log('[KVRA]', msg); }
@@ -355,6 +357,7 @@ function parseNome(nome, sets = dictSets()) {
     return null;
   };
   r.implantacao = match('implantacao', ['site']) ? true : false;
+  r.fase = match('situacao', ['existente', 'expansao', 'novo']);
   r.computo = match('computo', ['ncomp', 'tec', 'comp']);
   r.natureza = match('natureza', ['priv', 'comum']);
   r.familia = match('familia', Object.keys(S.dict.familia).filter(k => k !== 'estac'));
@@ -419,10 +422,10 @@ function renderUsos(lista) {
       const tag = { ok: '<span class="tag ok">OK</span>', tipologia: '<span class="tag">Tipologia</span>', implantacao: '<span class="tag">Implantação</span>', incompleto: '<span class="tag inc">Incompleto</span>', nao_classificado: '<span class="tag nc">Não classif.</span>', fora: '<span class="tag">Fora</span>' }[p.situacao];
       const esp = [p.codigo.length ? `<code>${esc(p.codigo.join(' '))}</code>` : '', esc(p.especifico)].filter(Boolean).join(' ');
       return `<tr class="st-${p.situacao === 'fora' ? 'fora' : 'in'}"><td><code>${esc(u.nome)}</code></td><td>${tag}</td>
-        <td>${esc(ROT.familia[p.familia] ?? '—')}${p.estacionamento && p.familia !== 'estac' ? ' · <span class="tag">Estac.</span>' : ''}</td><td>${esc(ROT.natureza[p.natureza] ?? '—')}</td><td>${esc(ROT.computo[p.computo] ?? '—')}</td>
+        <td>${esc(ROT.familia[p.familia] ?? '—')}${p.estacionamento && p.familia !== 'estac' ? ' · <span class="tag">Estac.</span>' : ''}</td><td>${esc(ROT.natureza[p.natureza] ?? '—')}</td><td>${esc(ROT.computo[p.computo] ?? '—')}</td><td>${esc(ROT.situacao[p.fase] ?? '—')}</td>
         <td>${esp || '—'}</td><td class="num">${st ? fmtInt(st.n) : '—'}</td><td class="num">${st && areaKey ? fmt(st.soma[areaKey]) : '—'}</td></tr>`;
     });
-  $('tbUsos').innerHTML = rows.join('') || '<tr><td colspan="8" class="muted">Nenhum uso.</td></tr>';
+  $('tbUsos').innerHTML = rows.join('') || '<tr><td colspan="9" class="muted">Nenhum uso.</td></tr>';
 }
 function renderProps() {
   const f = $('inFiltroProp').value.trim().toLowerCase();
@@ -496,6 +499,8 @@ async function extrair() {
     S.feats.analytics = normFeatures(ana?.stackedSectionResult?.asArray ?? ana?.stackedSectionResult?.asObject);
     S.fontes['analytics.stackedSectionResult'] = { ok: S.feats.analytics.length > 0, info: `${S.feats.analytics.length} feições avaliadas (empilhadas)` };
     if (!S.feats[S.featSrc]?.length) S.featSrc = FEAT_KEYS.find(k => S.feats[k]?.length) || 'analytics';
+    const blk = await tentar('getBlocks', () => rpc('getBlocks'));
+    S.blocos = blk ?? null; analisarBlocos();
     try { const keys = S.sdk.giraffeState && (S.sdk.giraffeState.state ? Object.keys(S.sdk.giraffeState.state) : null); S.fontes['giraffeState (chaves)'] = { ok: !!keys, info: keys ? keys.join(', ') : 'não enumerável' }; } catch {}
     if ($('chkBundle').checked) {
       const b = await tentar('getProjectBundle', () => rpc('getProjectBundle'));
@@ -517,7 +522,7 @@ const onModelChange = debounce(() => {
   rpc('getAnalyticsResult').then(ana => {
     S.analytics = ana ?? null; S.anaLeaves = []; if (ana !== undefined) walk(ana, '', S.anaLeaves);
     S.feats.analytics = normFeatures(ana?.stackedSectionResult?.asArray ?? ana?.stackedSectionResult?.asObject);
-  }).catch(e => log('getAnalyticsResult (sync): ' + e.message)).finally(() => { renderAll(); log('Modelo alterado → dados recalculados'); });
+  }).catch(e => log('getAnalyticsResult (sync): ' + e.message)).finally(() => { analisarBlocos(); renderAll(); log('Modelo alterado → dados recalculados'); });
 }, 700);
 function toggleLive(on) {
   S.live = on;
@@ -528,6 +533,22 @@ function toggleLive(on) {
   pill('stLive', `Sincronização: ${S.live ? 'ao vivo' : 'desligada'}`, S.live ? 'ok' : '');
 }
 
+function analisarBlocos() {
+  const ids = new Set(S.blocos && typeof S.blocos === 'object' ? Object.keys(S.blocos) : []);
+  const refs = {};
+  for (const src of FEAT_KEYS) for (const f of (S.feats[src] || [])) {
+    const p = f?.properties || {};
+    for (const [k, v] of Object.entries(p)) {
+      if (/block|bloco/i.test(k) || (typeof v === 'string' && ids.has(v))) {
+        const key = `${src}.${k}`; const r = refs[key] ??= { n: 0, valores: {} };
+        r.n++; const vv = typeof v === 'object' ? JSON.stringify(v).slice(0, 80) : String(v); r.valores[vv] = (r.valores[vv] || 0) + 1;
+      }
+    }
+  }
+  S.blocoRefs = refs;
+  const nDef = ids.size, nRef = Object.values(refs).reduce((a, r) => a + r.n, 0);
+  S.fontes['blocos (resumo)'] = { ok: nDef > 0 || nRef > 0, info: `${nDef} definições · ${nRef} referências em feições (${Object.keys(refs).join(', ') || 'nenhuma chave'})` };
+}
 /* ---------- exportação ---------- */
 function trunc(v, depth = 0) {
   if (typeof v === 'string') return v.length > 500 ? v.slice(0, 500) + '…' : v;
@@ -574,6 +595,7 @@ function buildExport() {
     feicoes: { fonte: S.featSrc, total: S.feats[S.featSrc]?.length ?? 0, chave_uso: S.usageKey, soma_por_uso: S.porUso, amostra: amostraFeicoes() },
     inventario_propriedades: inv,
     analytics: analyticsExport(),
+    blocos: { definicoes: semGeo(S.blocos), referencias_em_feicoes: S.blocoRefs },
     bundle: S.bundleInfo
   };
 }
@@ -607,8 +629,8 @@ function bindUI() {
   $('inFiltroProp').addEventListener('input', renderProps);
   $('selFonteFeat').addEventListener('change', e => { S.featSrc = e.target.value; renderAll(); });
   $('inFiltroAna').addEventListener('input', renderAna);
-  $('dictGrid').addEventListener('input', debounce(e => { const t = e.target; if (!t.dataset.g) return; S.dict[t.dataset.g][t.dataset.k] = t.value; lsSet('kvra_dict_v2', JSON.stringify(S.dict)); renderUsos(S.usosRaw); }, 250));
-  $('btnDictReset').addEventListener('click', () => { S.dict = structuredClone(DEF_DICT); lsSet('kvra_dict_v2', JSON.stringify(S.dict)); renderDict(); renderUsos(S.usosRaw); });
+  $('dictGrid').addEventListener('input', debounce(e => { const t = e.target; if (!t.dataset.g) return; S.dict[t.dataset.g][t.dataset.k] = t.value; lsSet('kvra_dict_v3', JSON.stringify(S.dict)); renderUsos(S.usosRaw); }, 250));
+  $('btnDictReset').addEventListener('click', () => { S.dict = structuredClone(DEF_DICT); lsSet('kvra_dict_v3', JSON.stringify(S.dict)); renderDict(); renderUsos(S.usosRaw); });
   $('btnManual').addEventListener('click', () => {
     const nomes = $('taNomes').value.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
     S.usosRaw = [...S.usosRaw.filter(u => !u.manual), ...nomes.map(n => ({ nome: n, id: null, raw: null, manual: true }))];
